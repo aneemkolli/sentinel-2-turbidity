@@ -1,0 +1,174 @@
+// -- Collections of Sentinel 2 TOA data -- //
+var S2_collection = ee.ImageCollection('COPERNICUS/S2') 
+  .filterDate('2020-01-01', '2020-12-31')
+  .filterBounds(aoi);
+
+//Cloud Mask
+function cloudMask(image) {
+  var qa = image.select('QA60');
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0).and(
+            qa.bitwiseAnd(cirrusBitMask).eq(0));
+  return image.updateMask(mask)
+      .select('B.*')
+      .copyProperties(image, ['system:time_start']);
+}
+var S2_col = S2_collection.map(cloudMask);
+
+// Add NDWI band to image collection
+  var addNDWI = function(image) {
+    return image.addBands(image.normalizedDifference(['B3', 'B8']).rename('NDWI'));
+  }; 
+  
+// Function to mask out NDWI
+  var S2maskedWater = function(image) {
+   var NDWI = image.select(['NDWI']);
+    return image.addBands(ee.Image(1).updateMask(NDWI.gte(0)).rename('NDWI_mask'));
+  };
+  
+// Apply water masking functions to image collection
+S2_col = S2_col.map(addNDWI).map(S2maskedWater);
+print(S2_col);
+
+// -- Atmospheric Correction using the SIAC atmospheric correction module -- //
+var siac = require('users/marcyinfeng/utils:SIAC');
+
+var S2_col_total = S2_col.map(siac.get_sur) 
+print(S2_col_total, 's2_Col')
+
+var S2_boa = siac.get_sur(S2_col.first());
+
+// Visualization Parameters
+var Color_comp_01 = {bands:"B4,B3,B2", min: 0.0, max: 0.2, gamma: 1};
+var Color_comp =    {bands:"B4,B3,B2", min:200, max:2000, gamma: 1};
+
+// Add NDTI
+var addNDTI = function(image) {
+  var ndti = image.normalizedDifference(['B4', 'B3']).rename('NDTI');
+  return image.addBands(ndti);
+};
+var s2NDTI = S2_BOA_Col.map(addNDTI);
+print(s2NDTI, 's2NDTI');
+
+
+//Monthly Images
+var months = ee.List.sequence(1,12);
+var years = ee.List.sequence(2020,2020); 
+// monthly composite
+var monthlyImages =  ee.ImageCollection.fromImages(
+  years.map(function (y) {
+  return months.map(function(m){
+  var w = S2_BOA_Col.filter(ee.Filter.calendarRange(y, y, 'year'))
+           .filter(ee.Filter.calendarRange(m, m, 'month'))
+           .mean()
+           //.median()
+           //.min()
+           .set('system:time_start',ee.Date.fromYMD(y,m,1));
+  return w.set('year', y)
+           .set('month', m)
+           .set('date', ee.Date.fromYMD(y,m,1))
+           .set('system:time_start',ee.Date.fromYMD(y,m,1)) 
+
+});
+}).flatten());
+
+print(monthlyImages);
+
+////  apply ndti to the images
+
+function ndti(img){
+  var ndtiImg = img.select(['B4','B3'],['red','green']);
+  ndtiImg = ndtiImg.expression(
+    '(RED - GREEN) / (RED + GREEN)', {
+      'RED': ndtiImg.select('red'),
+      'GREEN': ndtiImg.select('green')
+    }).rename('NDTI');
+  return img.addBands(ndtiImg);
+} 
+
+var monthlyCompositesNDTI = monthlyImages.map(function(image){
+  return ndti(image);
+}); //maps over monthly composites and adds an NDVI calculation to the band we added.
+print(monthlyCompositesNDTI, 'monthlyCompositesNDTI');
+
+var ndtiCollection = monthlyCompositesNDTI.select('NDTI'); 
+
+var J2020_ndti = ndtiCollection.filterDate('2020-01-01','2020-01-31')
+  .first()
+  .clip(aoi);
+
+var F2020_ndti = ndtiCollection.filterDate('2020-02-01','2020-02-29')
+  .first()
+  .clip(aoi);
+
+var Mar2020_ndti = ndtiCollection.filterDate('2020-03-01','2020-03-31')
+  .first()
+  .clip(aoi);
+  
+var Ap2020_ndti = ndtiCollection.filterDate('2020-04-01','2020-04-30')
+  .first()
+  .clip(aoi);
+  
+var M2020_ndti = ndtiCollection.filterDate('2020-05-01','2020-05-31')
+  .first()
+  .clip(aoi);
+  
+var JUN2020_ndti = ndtiCollection.filterDate('2020-06-01','2020-06-30')
+  .first()
+  .clip(aoi);
+  
+var JUL2020_ndti = ndtiCollection.filterDate('2020-07-01','2020-07-31')
+  .first()
+  .clip(aoi);
+  
+var A2020_ndti = ndtiCollection.filterDate('2020-08-01','2020-08-31')
+  .first()
+  .clip(aoi);
+  
+var S2020_ndti = ndtiCollection.filterDate('2020-09-01','2020-09-30')
+  .first()
+  .clip(aoi);
+  
+var O2020_ndti = ndtiCollection.filterDate('2020-10-01','2020-10-31')
+  .first()
+  .clip(aoi);
+  
+var N2020_ndti = ndtiCollection.filterDate('2020-11-01','2020-11-30')
+  .first()
+  .clip(aoi);
+  
+var D2020_ndti = ndtiCollection.filterDate('2020-12-01','2020-12-31')
+  .first()
+  .clip(aoi);
+  
+  
+var ndtiParams = {min: -1, max: 1, palette: ['white', 'darkgreen']}; 
+
+var yMean = ndtiCollection.mean(); 
+print (yMean, 'yMean')
+
+var stdImg = ndtiCollection.reduce(ee.Reducer.stdDev());
+
+var AnomalyJan2020 = J2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyFeb2020 = F2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyMar2020 = Mar2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyApr2020 = Ap2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyMay2020 = M2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyJun2020 = JUN2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyJul2020 = JUL2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyAug2020 = A2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalySep2020 = S2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyOct2020 = O2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyNov2020 = N2020_ndti.subtract(yMean).divide(stdImg);
+var AnomalyDec2020 = D2020_ndti.subtract(yMean).divide(stdImg);
+
+
+var Std_Anomalies = ee.ImageCollection([AnomalyJan2020, AnomalyFeb2020, AnomalyMar2020, AnomalyApr2020, AnomalyMay2020, AnomalyJun2020, AnomalyJul2020, AnomalyAug2020, AnomalySep2020, AnomalyOct2020, AnomalyNov2020, AnomalyDec2020]);
+
+var batch = require('users/fitoprincipe/geetools:batch');
+batch.Download.ImageCollection.toDrive(Std_Anomalies, 'S2_Std_Anomalies', 
+                {scale: 10, 
+                region: aoi, 
+                type: 'float'});
+                
